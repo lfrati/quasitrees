@@ -56,22 +56,6 @@ def all_prufers(N):
     return prufers
 
 
-def visit(tree, root=0):
-    seen = set()
-    seq = ""
-    return _visit(tree, root, seen, seq)
-
-
-def _visit(tree, root, seen, seq):
-    seen.add(root)
-    seq += str(root)
-    for node in tree[root]:
-        if node not in seen:
-            seq = _visit(tree, node, seen, seq)
-    seq += str(root)
-    return seq
-
-
 def edges2tree(edges):
     tree = defaultdict(set)
     for (start, end) in edges:
@@ -79,6 +63,94 @@ def edges2tree(edges):
         tree[end].add(start)
     tree = dict(tree)
     return tree
+
+
+def visit(tree, root, order="both"):
+    seen = set()
+    seq = []
+    return _visit(tree, root, seen, seq, order)
+
+
+def _visit(tree, root, seen, seq, order="both"):
+    seen.add(root)
+    if order == "pre" or order == "both":
+        seq.append(root)
+    children = [node for node in tree[root] if node not in seen]
+    for node in children:
+        seq = _visit(tree, node, seen, list(seq), order)
+    if order == "post" or order == "both":
+        seq.append(root)
+    return seq
+
+
+def get_multitree(forest, root):
+    # Turn
+    # { 1: {2, 3},
+    #   2: {1, 4},
+    #   3: {1, 5, 6, 7},
+    #   4: {2},
+    #   5: {3},
+    #   6: {3},
+    #   7: {8, 3},
+    #   8: {7}}
+    # into
+    # { 1: [(2, 3), (3, 2)],
+    #   2: [(4,)],
+    #   4: [()],
+    #   3: [(5, 6, 7), (5, 7, 6), (6, 5, 7), (6, 7, 5), (7, 5, 6), (7, 6, 5)],
+    #   5: [()],
+    #   6: [()],
+    #   7: [(8,)],
+    #   8: [()]
+    # }
+    seen = set()
+    options = {}
+    return _options(forest, root, seen, options)
+
+
+def _options(forest, root, seen, options):
+    seen.add(root)
+    children = [node for node in forest[root] if node not in seen]
+    options[root] = list(permutations(children))
+    for node in children:
+        _options(forest, node, seen, options)
+    return options
+
+
+def instantiate(multitree):
+    options = list(multitree.items())
+    tree = {}
+    yield from _instantiate(tree, options)
+
+
+def _instantiate(tree, options):
+    if len(options) == 0:
+        # no options available, yield the current tree
+        yield dict(tree)
+    else:
+        # options available, explore every combination
+        node, values = options[0]
+        for val in values:
+            tree[node] = val
+            yield from _instantiate(tree, options[1:])
+
+
+def multivisit(forest, root, order="both"):
+    # given a forest calculate possible visits order
+    # then instantiate each one of them and return visit sequence
+    multitree = get_multitree(forest, root)
+    visits = [visit(t, root, order) for t in instantiate(multitree)]
+    return visits
+
+
+def extract_sequences(forest, order="both"):
+    # return generator that explores a given tree from each possible root and each
+    # visit order
+    for root in forest.keys():
+        seqs = multivisit(forest, root, order)
+        # convert visit sequence to string e.g. [[1,2,2,1],[1,1,2,2]] -> ["1221","1122"]
+        seqs = ["".join(map(str, seq)) for seq in seqs]
+        yield from seqs
 
 
 # A note on Stirling permutations                https://arxiv.org/pdf/2005.04133.pdf
