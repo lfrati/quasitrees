@@ -1,6 +1,9 @@
+from collections import deque
 import itertools
-from math import ceil
-from matplotlib import pyplot as plt
+from itertools import permutations
+
+from tqdm import tqdm
+
 
 # A note on Stirling permutations                https://arxiv.org/pdf/2005.04133.pdf
 # Descents on quasi-Stirling permutations        https://arxiv.org/pdf/2002.00985.pdf
@@ -68,40 +71,12 @@ def test_trees():
             print(my)
 
 
-# %%
-
-n = 8
-trees = list(all_possible_trees(n))
-ys = []
-for i, tree in enumerate(trees):
-    root = build(tree)
-    print(f"{i:0>8b}:", root)
+"""
+Complete the labelling of node using the 1-left-then-right rule
+"""
 
 
-# from math import factorial
-## catalan number
-# factorial(2 * (n - 1)) / (factorial((n - 1) + 1) * factorial(n - 1))
-
-
-ntrees = len(trees)
-print(ntrees)
-
-# %%
-
-# candidata tree as example
-tree = trees[8]
-
-# turn the list reprentations into nodes/leaves for easier/readable manipulation
-root = build(tree)
-
-print("Unlabelled tree:")
-print(root)
-
-labels = list(map(str, range(1, n)))
-print("Labels:", labels)
-
-
-def label_tree(node, labels):
+def label_nodes(node, labels):
     """
     Given a list of labels inserts, them in the nodes of a tree.
     NOTE: trees are built from N leaves, there are N-1 nodes.
@@ -109,21 +84,9 @@ def label_tree(node, labels):
     if not node.is_leaf:
         node.label = labels[0]
         labels = labels[1:]
-        labels = label_tree(node.left, labels)
-        labels = label_tree(node.right, labels)
+        labels = label_nodes(node.left, labels)
+        labels = label_nodes(node.right, labels)
     return labels
-
-
-print("Partially labelled tree:")
-label_tree(root, labels)
-
-print(root)
-
-# %%
-
-"""
-Complete the labelling of node using the 1-left-then-right rule
-"""
 
 
 def far_right_insert(root, label):
@@ -133,27 +96,25 @@ def far_right_insert(root, label):
         far_right_insert(root.right, label)
 
 
-def apply_rule(root, rule):
+def label_leaves(root, rule):
     rule(root.left, root.label)
     if not root.left.is_leaf:
-        apply_rule(root.left, rule)
+        label_leaves(root.left, rule)
     if not root.right.is_leaf:
-        apply_rule(root.right, rule)
+        label_leaves(root.right, rule)
 
 
-apply_rule(root, far_right_insert)
-
-print("Fully labelled tree:", root)
-
-
-# %%
-
-"""
-Extract the quasi-Stirling permutation from a fully labelled tree
-"""
+def make_tree(skeleton, labels):
+    tree = build(skeleton)
+    label_nodes(tree, labels)
+    label_leaves(tree, far_right_insert)
+    return tree
 
 
 def get_permutation(root: Node | Leaf, sequence: str = "0"):
+    """
+    Extract the quasi-Stirling permutation from a fully labelled tree
+    """
     sequence = sequence + root.label
     if type(root) == Node:
         sequence = get_permutation(root.left, sequence)
@@ -161,203 +122,12 @@ def get_permutation(root: Node | Leaf, sequence: str = "0"):
     return sequence
 
 
-perm = get_permutation(root)
-
-
-# %%
-
-from collections import namedtuple
-
-Edge = namedtuple("Edge", "parent_label child_label parent_y child_y parent_x child_x")
-
-
-def visit(root):
-    edges = []
-
-    def _visit(root, depth=1, off=1.0):
-        if root.is_leaf:
-            return
-        loff = off - 1 / 2**depth  # x offset of left child
-        roff = off + 1 / 2**depth  # x offset of right child
-        cdepth = -depth - 1  # depth of children (negative to draw root at top)
-        edges.append(Edge(root.label, root.left.label, -depth, cdepth, off, loff))
-        edges.append(Edge(root.label, root.right.label, -depth, cdepth, off, roff))
-        _visit(root.left, depth=depth + 1, off=loff)
-        _visit(root.right, depth=depth + 1, off=roff)
-
-    _visit(root)
-
-    return edges
-
-
-def line(x0, y0, x1, y1, ax=None, color="black"):
-    if ax:
-        ax.plot((x0, x1), (y0, y1), color=color)
-    else:
-        plt.plot((x0, x1), (y0, y1), color=color)
-
-
-def point(x0, y0, marker=".", ax=None):
-    if ax:
-        ax.plot((x0), (y0), marker, zorder=999)
-    else:
-        plt.plot((x0), (y0), marker, zorder=999)
-
-
-def node(lbl, x0, y0, ax=None, **kwargs):
-    if ax:
-        ax.annotate(lbl, xy=(x0, y0), **kwargs)
-    else:
-        plt.annotate(lbl, xy=(x0, y0), **kwargs)
-
-
-def get_top_node(edges):
-    best = edges[0]
-    for candidate in edges[1:]:
-        if candidate.parent_y > best.parent_y:
-            best = candidate
-    return (best.parent_label, best.parent_x, best.parent_y)
-
-
-def plot_single(tree, figsize=(8, 8)):
-    _, ax = plt.subplots(figsize=figsize)
-
-    plt.axis("off")
-
-    edges = visit(tree)
-
-    perm = get_permutation(tree)
-
-    # centerd circle for nodes
-    kwargs = {"ha": "center", "va": "center", "bbox": dict(boxstyle="circle", fc="1.0")}
-
-    # fing top node to add stem
-    label, x, y = get_top_node(edges)
-
-    # draw stem above top node
-    line(x0=x, x1=x, y0=y + 1, y1=y, ax=ax)
-    node(lbl="0", x0=x, y0=y + 1, ax=ax, **kwargs)
-    # each edge draws the destination node, the top node needs to be drawn separately
-    node(lbl=label, x0=x, y0=y, ax=ax, **kwargs)
-
-    for edge in edges:
-        line(
-            x0=edge.parent_x, x1=edge.child_x, y0=edge.parent_y, y1=edge.child_y, ax=ax
-        )
-        ## source node
-        # node(edge.parent_label, x0=edge.parent_x, y0=edge.parent_y, ax=ax, **kwargs)
-        ## destination node
-        node(edge.child_label, x0=edge.child_x, y0=edge.child_y, ax=ax, **kwargs)
-
-    plt.title(perm)
-    plt.grid()
-    plt.tight_layout()
-    perm = get_permutation(tree)
-    # plt.savefig(f"tree_figs/{perm}.png")
-    # plt.close()
-    plt.show()
-
-
-def plot_all(trees, show_nodes=True, figsize=(16, 10)):
-    ntrees = len(trees)
-    N = ceil(ntrees**0.5)
-
-    # if it fits nicely on a grid go for it
-    if (N * (N - 1)) == ntrees:
-        M = N - 1
-    else:
-        M = N
-
-    _, axs = plt.subplots(nrows=N, ncols=M, figsize=figsize)
-
-    for ax in axs.flatten():
-        ax.axis("off")
-
-    for ax, tree in zip(axs.flatten(), trees):
-        root = build(tree)
-        edges = visit(root)
-
-        _, x, y = get_top_node(edges)
-        point(x0=x, y0=y, ax=ax)
-
-        for edge in edges:
-            line(
-                x0=edge.parent_x,
-                x1=edge.child_x,
-                y0=edge.parent_y,
-                y1=edge.child_y,
-                ax=ax,
-            )
-            if show_nodes:
-                point(x0=edge.child_x, y0=edge.child_y, ax=ax)
-            ax.grid()
-    plt.tight_layout()
-    plt.show()
-
-
-# plot_all(list(all_possible_trees(7)))
-
-# %%
-
-n = 5
-skeletons = list(all_possible_trees(n))
-
-# n-1 strin labels
-labels = list(map(str, range(1, n)))
-
-from itertools import permutations
-from tqdm import tqdm
-
-for perm in tqdm(permutations(labels)):
+def make_all_labelled(n):
+    skeletons = list(all_possible_trees(n))
+    all_labels = list(map(str, range(1, n)))
     for skeleton in skeletons:
-        tree = build(skeleton)
-        label_tree(tree, perm)
-        apply_rule(tree, far_right_insert)
-        print(get_permutation(tree))
-        # plot_single(tree)
-
-# %%
-
-from itertools import permutations
-from string import ascii_uppercase
-
-
-def labels_skeleton_to_perm(candidate, skeleton):
-    tree = build(skeleton)
-    label_tree(tree, candidate)
-    apply_rule(tree, far_right_insert)
-    return get_permutation(tree)
-
-
-def is_stirling(perm):
-    """
-    Has no
-        X_Y_Y_X : X < Y
-    """
-    seen = set()
-    N = len(perm) // 2
-    for start, el in enumerate(perm):
-        seen.add(el)
-        end = perm[start + 1 :].find(el) + start + 1
-        for pos, val in enumerate(perm[start + 1 : end]):
-            if int(el) > int(val):
-                return False, (pos + start + 1, start, end)
-        if len(seen) >= N:
-            return True, None
-
-
-# %%
-
-## TEST TREE
-# tree = build([[0, [[0, 0], 0]], 0])
-# labels = ["2", "3", "1", "4"]
-# label_tree(tree, labels)
-# apply_rule(tree, far_right_insert)
-# print(tree)
-# perm = get_permutation(tree)
-# print(perm)
-
-from collections import deque
+        for labels in permutations(all_labels):
+            yield make_tree(skeleton, labels)
 
 
 def perm_to_tree(perm):
@@ -414,113 +184,163 @@ def perm_to_tree(perm):
     return root
 
 
-n = 8
-skeletons = list(all_possible_trees(n))
-labels = list(map(str, range(1, n)))
-for perm in tqdm(permutations(labels)):
-    for skeleton in skeletons:
-        tree = build(skeleton)
-        label_tree(tree, perm)
-        apply_rule(tree, far_right_insert)
-        permutation = get_permutation(tree)
-        reconstructed_tree = perm_to_tree(permutation)
-        reconstructed_perm = get_permutation(reconstructed_tree)
-        if permutation != reconstructed_perm:
-            print(f"ERROR:{permutation} != {reconstructed_perm}")
-        # else:
-        #     print(f"{permutation} MATCHES")
+#%%
 
+if __name__ == "__main__":
 
-# %%
+    # %%
 
-PINK = "\033[95m"
-BLUE = "\033[94m"
-CYAN = "\033[96m"
-GREEN = "\033[92m"
-YELLOW = "\033[93m"
-RED = "\033[91m"
-ENDC = "\033[0m"
-# BOLD = "\033[1m"
-# UNDERLINE = "\033[4m"
+    n = 8
+    trees = list(all_possible_trees(n))
+    ys = []
+    for i, tree in enumerate(trees):
+        root = build(tree)
+        print(f"{i:>4}:", root)
 
+    # %%
 
-def color_char(ch, color):
-    return f"{color}{ch}{ENDC}"
+    # candidata tree as example
+    tree = trees[8]
 
+    # turn the list reprentations into nodes/leaves for easier/readable manipulation
+    root = build(tree)
 
-def color_str(str, pos, color):
-    return "".join(
-        [color_char(ch, color) if i in pos else ch for i, ch in enumerate(str)]
-    )
+    print("Unlabelled tree:")
+    print("", root)
 
+    labels = list(map(str, range(1, n)))
+    print("Labels:", labels)
 
-n = 5
+    print("Partially labelled tree:")
+    label_nodes(root, labels)
 
-# as if xD
-assert n < 26
+    print("", root)
 
-skeletons = list(all_possible_trees(n))
-labels = list(map(str, range(1, n)))  # n-1 labels
+    label_leaves(root, far_right_insert)
 
-candidates = list(permutations(labels))
-for skeleton in skeletons:
-    perms = []
-    pattern = labels_skeleton_to_perm(candidates[0], skeleton)
-    pattern = "".join(map(lambda x: ascii_uppercase[int(x)], pattern))
+    print("Fully labelled tree:")
+    print("", root)
 
-    print("Skeleton:", pattern)
-    for candidate in candidates:
-        perm = labels_skeleton_to_perm(candidate, skeleton)
-        perms.append(perm)
-        res, pos = is_stirling(perm)
-        c = "".join(candidate)
-        if res:
-            print(c, " -> ", perm, "S")
-        else:
-            perm_augmented = color_str(perm, pos, RED)
-            values = set([int(perm[p]) for p in pos])
-            c_pos = [c.find(str(v)) for v in values]
-            c_augmented = color_str(c, c_pos, RED)
-            print(c_augmented, " -> ", perm_augmented, "")
-    print()
+    # %%
 
+    perm = get_permutation(root)
 
-# %%
+    # %%
 
-import numpy as np
+    n = 5
+    skeletons = list(all_possible_trees(n))
 
-n = 7
+    # n-1 strin labels
+    all_labels = list(map(str, range(1, n)))
 
-skeletons = list(all_possible_trees(n))
-labels = list(map(str, range(1, n)))  # n-1 labels
+    from itertools import permutations
+    from tqdm import tqdm
 
-rows = []
-candidates = list(permutations(labels))
-for skeleton in skeletons:
-    perms = []
-    row = []
-    for candidate in candidates:
-        perm = labels_skeleton_to_perm(candidate, skeleton)
-        perms.append(perm)
-        row.append(is_stirling(perm)[0])
-    rows.append(row)
+    cnt = 0
+    for labels in tqdm(permutations(all_labels)):
+        print(perm)
+        for skeleton in skeletons:
+            tree = make_tree(skeleton, labels)
+            print(f"{cnt:>4}: {get_permutation(tree)}")
+            cnt += 1
+            # plot_single(tree)
 
-mat = np.array(rows)
+    # %%
 
-# %%
+    ## TEST TREE
+    # tree = build([[0, [[0, 0], 0]], 0])
+    # labels = ["2", "3", "1", "4"]
+    # label_tree(tree, labels)
+    # apply_rule(tree, far_right_insert)
+    # print(tree)
+    # perm = get_permutation(tree)
+    # print(perm)
 
-to_show = np.flipud(mat)
-spaces = np.zeros_like(to_show)
-to_show = np.hstack([to_show, spaces]).reshape(to_show.shape[0] * 2, to_show.shape[1])
-print(to_show.shape)
+    n = 8
+    skeletons = list(all_possible_trees(n))
+    all_labels = list(map(str, range(1, n)))
+    for labels in tqdm(permutations(all_labels)):
+        for skeleton in skeletons:
+            tree = make_tree(skeleton, labels)
+            permutation = get_permutation(tree)
+            reconstructed_tree = perm_to_tree(permutation)
+            reconstructed_perm = get_permutation(reconstructed_tree)
+            if permutation != reconstructed_perm:
+                print(f"ERROR:{permutation} != {reconstructed_perm}")
+            # else:
+            #     print(f"{permutation} MATCHES")
 
-# N = to_show.shape[0]
-# to_show = np.array([np.roll(row, (N - i) // 2) for i, row in enumerate(to_show)])
+    #%%
 
-plt.figure(figsize=(19, 8))
-# plt.axis("off")
-plt.ylabel("skeletons")
-plt.xlabel("permutations")
-plt.imshow(to_show, interpolation="nearest")
-plt.tight_layout()
-plt.show()
+    import numpy as np
+    from collections import defaultdict
+
+    def is_stirling(perm):
+        """
+        Assume: perm is generated by a visit of a binary tree.
+        The permutation is Stirling if:
+            it has NO X_Y_Y_X : X < Y
+        """
+        perm = [int(i) for i in perm if int(i) > 0]
+        ranges = defaultdict(list)
+        for i, val in enumerate(perm):
+            ranges[val].append(i)
+        for val, (start, stop) in ranges.items():
+            segment = perm[start : stop + 1]
+            if np.min(segment) < val:
+                return False
+        return True
+
+    assert not is_stirling("0432112340")
+    assert is_stirling("0123443210")
+    assert is_stirling("0112233440")
+
+    #%%
+
+    def descents_and_plateaus(perm):
+        d, p = 0, 0
+        for a, b in zip(perm, perm[1:]):
+            if a == b:
+                p += 1
+            elif a > b:
+                d += 1
+        return d, p
+
+    print(descents_and_plateaus("0432112340"))
+
+    def make_dp(n):
+        M = np.zeros((n, n), dtype=np.uint32)
+        for tree in make_all_labelled(n):
+            perm = get_permutation(tree)
+            if not is_stirling(perm):
+                d, p = descents_and_plateaus(perm)
+                M[p, d] += 1
+        return M
+
+    make_dp(4)
+
+    # %%
+
+    from itertools import permutations
+
+    def labels_skeleton_to_perm(labels, skeleton):
+        tree = make_tree(skeleton, labels)
+        return get_permutation(tree)
+
+    PINK = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    ENDC = "\033[0m"
+    # BOLD = "\033[1m"
+    # UNDERLINE = "\033[4m"
+
+    def color_char(ch, color):
+        return f"{color}{ch}{ENDC}"
+
+    def color_str(str, pos, color):
+        return "".join(
+            [color_char(ch, color) if i in pos else ch for i, ch in enumerate(str)]
+        )
