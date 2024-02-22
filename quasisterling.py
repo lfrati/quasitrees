@@ -1,7 +1,8 @@
-from collections import deque
+from collections import defaultdict, deque
 import itertools
 from itertools import permutations
 
+import numpy as np
 from tqdm import tqdm
 
 
@@ -184,10 +185,9 @@ def perm_to_tree(perm):
     return root
 
 
-#%%
+# %%
 
 if __name__ == "__main__":
-
     # %%
 
     n = 8
@@ -221,29 +221,14 @@ if __name__ == "__main__":
     print("Fully labelled tree:")
     print("", root)
 
-    # %%
-
+    print("Pemruatation:")
     perm = get_permutation(root)
+    print("", perm)
 
     # %%
 
-    n = 5
-    skeletons = list(all_possible_trees(n))
-
-    # n-1 strin labels
-    all_labels = list(map(str, range(1, n)))
-
-    from itertools import permutations
-    from tqdm import tqdm
-
-    cnt = 0
-    for labels in tqdm(permutations(all_labels)):
-        print(perm)
-        for skeleton in skeletons:
-            tree = make_tree(skeleton, labels)
-            print(f"{cnt:>4}: {get_permutation(tree)}")
-            cnt += 1
-            # plot_single(tree)
+    for i, tree in tqdm(enumerate(make_all_labelled(5))):
+        print(f"{i:>4}: {get_permutation(tree)}")
 
     # %%
 
@@ -257,23 +242,73 @@ if __name__ == "__main__":
     # print(perm)
 
     n = 8
-    skeletons = list(all_possible_trees(n))
-    all_labels = list(map(str, range(1, n)))
-    for labels in tqdm(permutations(all_labels)):
-        for skeleton in skeletons:
-            tree = make_tree(skeleton, labels)
-            permutation = get_permutation(tree)
-            reconstructed_tree = perm_to_tree(permutation)
-            reconstructed_perm = get_permutation(reconstructed_tree)
-            if permutation != reconstructed_perm:
-                print(f"ERROR:{permutation} != {reconstructed_perm}")
+    for i, tree in tqdm(enumerate(make_all_labelled(n))):
+        permutation = get_permutation(tree)
+        reconstructed_tree = perm_to_tree(permutation)
+        reconstructed_perm = get_permutation(reconstructed_tree)
+        if permutation != reconstructed_perm:
+            print(f"ERROR:{permutation} != {reconstructed_perm}")
+        # else:
+        #     print(f"{permutation} MATCHES")
+
+    # %%
+
+    def descents_and_plateaus(
+        perm,
+    ):
+        d, p = 0, 0
+        for a, b in zip(perm, perm[1:]):
+            # print(f"{a}{b}", end=" ")
+            if a == b:
+                # print("p")
+                p += 1
+            elif a > b:
+                # print("d")
+                d += 1
             # else:
-            #     print(f"{permutation} MATCHES")
+            #     print("a")
+        return d, p
 
-    #%%
+    def descents_and_plateaus2(perm):
+        d, p = 0, 0
+        seen = set()
+        for a, b in zip(perm, perm[1:]):
+            # print(f"{a}{b}", end=" ")
+            if a == b:
+                p += 1
+                # print("p1")
+            elif a > b and a not in seen:
+                p += 1
+                d += 1
+                # print("p2")
+            elif a > b:
+                d += 1
+                # print("d")
+            # else:
+            #     print("a")
+            seen.add(a)
+        return d, p
 
-    import numpy as np
-    from collections import defaultdict
+    perm = "0432112340"
+    print(perm)
+    print(descents_and_plateaus(perm))
+    print(descents_and_plateaus2(perm))
+
+    # %%
+
+    def make_dp(n):
+        M = np.zeros((n, n), dtype=np.uint32)
+        for tree in tqdm(make_all_labelled(n)):
+            perm = get_permutation(tree)
+            d, p = descents_and_plateaus(perm)
+            M[p, d] += 1
+        return M
+
+    M = make_dp(7)
+
+    print(M[1:, 1:], M.sum())
+
+    # %%
 
     def is_stirling(perm):
         """
@@ -286,8 +321,7 @@ if __name__ == "__main__":
         for i, val in enumerate(perm):
             ranges[val].append(i)
         for val, (start, stop) in ranges.items():
-            segment = perm[start : stop + 1]
-            if np.min(segment) < val:
+            if np.min(perm[start : stop + 1]) < val:
                 return False
         return True
 
@@ -295,52 +329,30 @@ if __name__ == "__main__":
     assert is_stirling("0123443210")
     assert is_stirling("0112233440")
 
-    #%%
-
-    def descents_and_plateaus(perm):
-        d, p = 0, 0
-        for a, b in zip(perm, perm[1:]):
-            if a == b:
-                p += 1
-            elif a > b:
-                d += 1
-        return d, p
-
-    print(descents_and_plateaus("0432112340"))
-
-    def make_dp(n):
-        M = np.zeros((n, n), dtype=np.uint32)
-        for tree in make_all_labelled(n):
-            perm = get_permutation(tree)
-            if not is_stirling(perm):
-                d, p = descents_and_plateaus(perm)
-                M[p, d] += 1
-        return M
-
-    make_dp(4)
-
     # %%
 
-    from itertools import permutations
-
-    def labels_skeleton_to_perm(labels, skeleton):
-        tree = make_tree(skeleton, labels)
-        return get_permutation(tree)
-
-    PINK = "\033[95m"
-    BLUE = "\033[94m"
-    CYAN = "\033[96m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    ENDC = "\033[0m"
-    # BOLD = "\033[1m"
-    # UNDERLINE = "\033[4m"
-
-    def color_char(ch, color):
-        return f"{color}{ch}{ENDC}"
-
-    def color_str(str, pos, color):
-        return "".join(
-            [color_char(ch, color) if i in pos else ch for i, ch in enumerate(str)]
-        )
+    # # %%
+    #
+    # from itertools import permutations
+    #
+    # def labels_skeleton_to_perm(labels, skeleton):
+    #     tree = make_tree(skeleton, labels)
+    #     return get_permutation(tree)
+    #
+    # PINK = "\033[95m"
+    # BLUE = "\033[94m"
+    # CYAN = "\033[96m"
+    # GREEN = "\033[92m"
+    # YELLOW = "\033[93m"
+    # RED = "\033[91m"
+    # ENDC = "\033[0m"
+    # # BOLD = "\033[1m"
+    # # UNDERLINE = "\033[4m"
+    #
+    # def color_char(ch, color):
+    #     return f"{color}{ch}{ENDC}"
+    #
+    # def color_str(str, pos, color):
+    #     return "".join(
+    #         [color_char(ch, color) if i in pos else ch for i, ch in enumerate(str)]
+    #     )
